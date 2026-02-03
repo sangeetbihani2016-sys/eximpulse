@@ -76,44 +76,42 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. REAL DATA MAPPING (NO FAKES) ---
-# Mapping HSN/Commodities to Real-Time Yahoo Finance Tickers
-# Note: We use Futures contracts as benchmarks.
+# --- 3. ROBUST DATA MAPPING ---
+# Switched to ETFs (Funds) which are much more stable on the free API than Futures
 COMMODITY_MAP = {
-    "Cotton (5201)": "CT=F",      # Cotton No. 2
-    "Coffee (0901)": "KC=F",      # Coffee C
-    "Sugar (1701)": "SB=F",       # Sugar No. 11
-    "Wheat (1001)": "ZW=F",       # Chicago Wheat
-    "Corn (1005)": "ZC=F",        # Corn Futures
-    "Soybean (1201)": "ZS=F",     # Soybean Futures
-    "Silver (7106)": "SI=F",      # Silver
-    "Crude Oil": "CL=F",          # WTI Crude
-    "Cocoa (1801)": "CC=F"        # Cocoa
+    "Cotton (Benchmark)": "BAL",    # iPath Series B Bloomberg Cotton Subindex
+    "Coffee (Benchmark)": "JO",     # iPath Series B Bloomberg Coffee Subindex
+    "Sugar (Benchmark)": "SGG",     # iPath Series B Bloomberg Sugar Subindex
+    "Wheat (Benchmark)": "WEAT",    # Teucrium Wheat Fund
+    "Corn (Benchmark)": "CORN",     # Teucrium Corn Fund
+    "Soybean (Benchmark)": "SOYB",  # Teucrium Soybean Fund
+    "Copper (Benchmark)": "CPER",   # US Copper Index Fund
+    "Crude Oil (Benchmark)": "USO"  # United States Oil Fund
 }
 
 # --- 4. DATA FUNCTIONS ---
 
-@st.cache_data(ttl=60) # Cache for 1 min only (Keep it fresh)
+@st.cache_data(ttl=60)
 def get_live_price(ticker_symbol):
-    """Fetches ACTUAL live market data from Yahoo Finance."""
+    """Fetches ACTUAL live market data with a fallback mechanism."""
     try:
         data = yf.Ticker(ticker_symbol)
-        history = data.history(period="5d") # Get last 5 days
+        
+        # Robust Fetch: Try 5 days, if empty try 1 month (handles holidays/weekends)
+        history = data.history(period="5d")
+        if history.empty:
+            history = data.history(period="1mo")
         
         if not history.empty:
             current_price = history['Close'].iloc[-1]
             prev_close = history['Close'].iloc[-2]
             change_pct = ((current_price - prev_close) / prev_close) * 100
             
-            # Get volume if available
-            volume = history['Volume'].iloc[-1] if 'Volume' in history else 0
-            
             return {
                 "price": current_price,
                 "change": change_pct,
-                "volume": volume,
                 "history": history.reset_index(),
-                "status": "Live 🟢"
+                "currency": "USD" # ETFs are usually in USD
             }
         return None
     except Exception as e:
@@ -187,7 +185,7 @@ fx_data = get_live_price(map_fx[currency_pair])
 if fx_data:
     c1.metric(currency_pair, f"₹{fx_data['price']:.2f}", f"{fx_data['change']:.2f}%")
 else:
-    c1.metric(currency_pair, "N/A", "No Data")
+    c1.metric(currency_pair, "N/A", "Check Connection")
 
 # 2. Real Weather
 w = get_weather(selected_port)
@@ -202,7 +200,7 @@ st.markdown("---")
 
 # SCANNER
 st.subheader("📊 Global Commodity Benchmark Scanner")
-st.caption("Tracking Live Futures Contracts (Global Price Drivers)")
+st.caption("Tracking Major Commodity ETFs (Real-Time Price Drivers)")
 
 # Dropdown with ONLY mapped real commodities
 selected_comm_name = st.selectbox("Select Commodity Benchmark:", list(COMMODITY_MAP.keys()))
@@ -216,7 +214,7 @@ if selected_comm_name:
     if market_data:
         # Show Big Price
         st.metric(
-            label=f"Live Price ({selected_comm_name})",
+            label=f"Index Price ({selected_comm_name})",
             value=f"${market_data['price']:.2f}",
             delta=f"{market_data['change']:.2f}%"
         )
@@ -237,17 +235,16 @@ if selected_comm_name:
         with col_stats:
             st.markdown("##### Market Depth")
             st.dataframe(pd.DataFrame({
-                "Metric": ["Open", "High", "Low", "Volume"],
+                "Metric": ["Open", "High", "Low"],
                 "Value": [
                     f"${market_data['history']['Open'].iloc[-1]:.2f}",
                     f"${market_data['history']['High'].iloc[-1]:.2f}",
-                    f"${market_data['history']['Low'].iloc[-1]:.2f}",
-                    f"{market_data['volume']:,}"
+                    f"${market_data['history']['Low'].iloc[-1]:.2f}"
                 ]
             }), hide_index=True, use_container_width=True)
             
     else:
-        st.error(f"Could not fetch live data for {selected_comm_name}. Market might be closed or API is restricted.")
+        st.error(f"⚠️ Data Unavailable for {selected_comm_name}. The market might be closed.")
 
 st.markdown("---")
 st.markdown("<center style='color:#666'>EximPulse Terminal v2.1 • Built by Sangeet Bihani</center>", unsafe_allow_html=True)
